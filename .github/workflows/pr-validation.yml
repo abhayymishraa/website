@@ -1,0 +1,62 @@
+name: PR Checklist
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check_pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Check PR content
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const fs = require('fs');
+            const prBody = context.payload.pull_request.body;
+            
+            // Read the PR template
+            const templateContent = fs.readFileSync('.github/pull_request_template.md', 'utf8');
+            
+            // Check for issue link
+            const issueRegex = /(?:Closes|Related to) #\d+/;
+            const hasIssueLink = issueRegex.test(prBody);
+            
+            // Check for summary
+            const hasSummary = prBody.includes('## Summary') && prBody.split('## Summary')[1].trim().length > 0;
+            
+            // Check for breaking changes
+            const hasBreakingChanges = prBody.includes('## Does this PR introduce a breaking change?') && 
+                                       prBody.split('## Does this PR introduce a breaking change?')[1].trim().length > 0;
+            
+            // Check for checklist completion
+            const checklistRegex = /- \[x\]/g;
+            const checklistCount = (prBody.match(checklistRegex) || []).length;
+            const totalChecklistItems = (templateContent.match(/- \[ \]/g) || []).length;
+            const isChecklistComplete = checklistCount === totalChecklistItems;
+            
+            let commentBody = '';
+            
+            if (!hasIssueLink || !hasSummary || !hasBreakingChanges || !isChecklistComplete) {
+              commentBody = "Thank you for your contribution! To help with the review process, please ensure the following:\n\n";
+              
+              if (!hasIssueLink) commentBody += "- Link to the related issue(s) in the PR description\n";
+              if (!hasSummary) commentBody += "- Provide a summary of the changes in the PR description\n";
+              if (!hasBreakingChanges) commentBody += "- Indicate whether this PR introduces breaking changes\n";
+              if (!isChecklistComplete) commentBody += "- Complete all items in the PR checklist\n";
+              
+              commentBody += "\nPlease update your PR description with the missing information. This will help streamline the review process. Thank you!";
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+              
+              core.setFailed('PR is missing required information');
+            }
