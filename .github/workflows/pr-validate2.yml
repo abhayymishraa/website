@@ -1,0 +1,76 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Validate PR Template and Checklist
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Define the required sections and placeholders
+        required_sections=(
+          "Description"
+          "Related Issues"
+          "Summary"
+          "Checklist"
+        )
+
+        # Fetch the pull request body
+        pr_body=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
+          | jq -r '.body')
+
+        missing_sections=()
+
+        # Check for missing sections
+        for section in "${required_sections[@]}"; do
+          if ! echo "$pr_body" | grep -iq "$section"; then
+            missing_sections+=("$section")
+          fi
+        done
+
+        # Validate checklist for checked items
+        checklist_errors=0
+        if echo "$pr_body" | grep -q "Checklist"; then
+          checklist=$(echo "$pr_body" | sed -n '/Checklist/,/##/p' | grep -E '\[([ xX])\]')
+          if ! echo "$checklist" | grep -q "\[x\]"; then
+            checklist_errors=1
+          fi
+        fi
+
+        # Combine errors
+        if [ ${#missing_sections[@]} -ne 0 ] || [ "$checklist_errors" -ne 0 ]; then
+          missing_list=$(printf "%s\n" "${missing_sections[@]}" | sed 's/^/- /')
+
+          # Prepare comment body
+          comment_body="Hi @${{ github.actor }},\n\nYour pull request has the following issues:\n"
+          
+          if [ ${#missing_sections[@]} -ne 0 ]; then
+            comment_body+="- Missing required sections:\n\n$missing_list\n"
+          fi
+
+          if [ "$checklist_errors" -ne 0 ]; then
+            comment_body+="- Checklist validation failed: Please ensure at least one applicable checkbox is checked in the checklist.\n"
+          fi
+
+          comment_body+="\nPlease address these issues before the review. Thank you! 🚀"
+
+          # Post the comment
+          curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -d "{\"body\": \"$comment_body\"}"
+          exit 1
+        else
+          echo "All required sections are present, and checklist validation passed!"
+        fi
