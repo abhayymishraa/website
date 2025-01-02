@@ -21,44 +21,43 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const prBody = pr.body || '';
-
+            
             let missingItems = [];
-
+            
             // Check for issue links
             const issueRegex = /(closes|related to)\s+#\d+/i;
             if (!issueRegex.test(prBody)) {
               missingItems.push('issue reference');
             }
-
+            
             // Check for kind of change
-            // Extract content between headers or until the next section
-            const changeMatch = prBody.match(/\*\*What kind of change does this PR introduce\?\*\*([\s\S]*?)(?=\*\*|$)/);
-            const changeContent = changeMatch ? changeMatch[1].trim() : '';
-
-            // Check if content exists and is not just the template comment
-            if (!changeContent || changeContent.includes('<!-- E.g. a bugfix') || 
-                changeContent.length < 5) {  // Minimum meaningful content length
+            if (!prBody.includes('**What kind of change does this PR introduce?**') || 
+                prBody.includes('<!-- E.g. a bugfix, feature, refactoring, etc… -->')) {
               missingItems.push('kind of change description');
             }
-
+            
             // Check for breaking changes
-            const breakingMatch = prBody.match(/\*\*Does this PR introduce a breaking change\?\*\*([\s\S]*?)(?=\*\*|$)/);
-            const breakingContent = breakingMatch ? breakingMatch[1].trim() : '';
-
-            // Check if breaking changes section has meaningful content
-            if (!breakingContent || breakingContent.includes('<!-- If this PR introduces') || 
-                breakingContent.length < 5) {
+            if (!prBody.includes('**Does this PR introduce a breaking change?**') ||
+                prBody.includes('<!-- If this PR introduces a breaking change')) {
               missingItems.push('breaking changes information');
             }
-
-
+            
             // Check for unchecked items in checklist
             if (prBody.includes('- [ ]')) {
               missingItems.push('completed checklist items');
             }
-
-            // If any required information is missing, comment on the PR
+            
+            // Get current labels
+            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            
+            const hasNeedsInfoLabel = currentLabels.some(label => label.name === 'needs-info');
+            
             if (missingItems.length > 0) {
+              // If there are missing items, add comment and label
               const missingItemsList = missingItems.join(', ');
               const comment = `Hi @${pr.user.login}! Thanks a lot for your contribution! 
               
@@ -75,11 +74,22 @@ jobs:
                 body: comment
               });
               
-              // Optional: Add a label to indicate missing information
-              await github.rest.issues.addLabels({
+              // Add needs-info label if not already present
+              if (!hasNeedsInfoLabel) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  labels: ['needs-info']
+                });
+              }
+            } else if (hasNeedsInfoLabel) {
+              // If all requirements are met and the needs-info label exists, remove it
+              await github.rest.issues.removeLabel({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                labels: ['needs-info']
+                name: 'needs-info'
               });
+              
             }
