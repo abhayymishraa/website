@@ -24,6 +24,26 @@ jobs:
             
             let missingItems = [];
             
+            // Helper function to extract content between section headers
+            function extractSectionContent(content, sectionHeader) {
+              const regex = new RegExp(`\\*\\*${sectionHeader}\\*\\*(.*?)(?=\\*\\*|$)`, 's');
+              const match = content.match(regex);
+              if (!match) return '';
+              
+              // Remove HTML comments and trim whitespace
+              return match[1].replace(/<!--[\s\S]*?-->/g, '').trim();
+            }
+            
+            // Helper function to check if content is meaningful
+            function hasMeaningfulContent(content) {
+              // Remove HTML comments, markdown symbols, and extra whitespace
+              const cleanContent = content
+                .replace(/<!--[\s\S]*?-->/g, '')
+                .replace(/[#*\[\]()_]/g, '')
+                .trim();
+              return cleanContent.length >= 3; // Requiring at least 3 characters
+            }
+            
             // Check for issue links
             const issueRegex = /(closes|related to)\s+#\d+/i;
             if (!issueRegex.test(prBody)) {
@@ -31,19 +51,20 @@ jobs:
             }
             
             // Check for kind of change
-            if (!prBody.includes('**What kind of change does this PR introduce?**') || 
-                prBody.includes('<!-- E.g. a bugfix, feature, refactoring, etc… -->')) {
+            const changeContent = extractSectionContent(prBody, 'What kind of change does this PR introduce\\?');
+            if (!hasMeaningfulContent(changeContent)) {
               missingItems.push('kind of change description');
             }
             
             // Check for breaking changes
-            if (!prBody.includes('**Does this PR introduce a breaking change?**') ||
-                prBody.includes('<!-- If this PR introduces a breaking change')) {
+            const breakingContent = extractSectionContent(prBody, 'Does this PR introduce a breaking change\\?');
+            if (!hasMeaningfulContent(breakingContent)) {
               missingItems.push('breaking changes information');
             }
             
             // Check for unchecked items in checklist
-            if (prBody.includes('- [ ]')) {
+            const checklistMatch = prBody.match(/# Checklist([\s\S]*?)(?=(?:#|$))/);
+            if (checklistMatch && checklistMatch[1].includes('- [ ]')) {
               missingItems.push('completed checklist items');
             }
             
@@ -91,5 +112,4 @@ jobs:
                 issue_number: context.issue.number,
                 name: 'needs-info'
               });
-              
             }
