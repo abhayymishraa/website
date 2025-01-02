@@ -21,32 +21,42 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const prBody = pr.body || '';
-            
+
             let missingItems = [];
-            
+
             // Check for issue links
             const issueRegex = /(closes|related to)\s+#\d+/i;
             if (!issueRegex.test(prBody)) {
               missingItems.push('issue reference');
             }
-            
+
             // Check for kind of change
-            if (!prBody.includes('**What kind of change does this PR introduce?**') || 
-                prBody.includes('<!-- E.g. a bugfix, feature, refactoring, etc… -->')) {
+            // Extract content between headers or until the next section
+            const changeMatch = prBody.match(/\*\*What kind of change does this PR introduce\?\*\*([\s\S]*?)(?=\*\*|$)/);
+            const changeContent = changeMatch ? changeMatch[1].trim() : '';
+
+            // Check if content exists and is not just the template comment
+            if (!changeContent || changeContent.includes('<!-- E.g. a bugfix') || 
+                changeContent.length < 5) {  // Minimum meaningful content length
               missingItems.push('kind of change description');
             }
-            
+
             // Check for breaking changes
-            if (!prBody.includes('**Does this PR introduce a breaking change?**') ||
-                prBody.includes('<!-- If this PR introduces a breaking change')) {
+            const breakingMatch = prBody.match(/\*\*Does this PR introduce a breaking change\?\*\*([\s\S]*?)(?=\*\*|$)/);
+            const breakingContent = breakingMatch ? breakingMatch[1].trim() : '';
+
+            // Check if breaking changes section has meaningful content
+            if (!breakingContent || breakingContent.includes('<!-- If this PR introduces') || 
+                breakingContent.length < 5) {
               missingItems.push('breaking changes information');
             }
-            
+
+
             // Check for unchecked items in checklist
             if (prBody.includes('- [ ]')) {
               missingItems.push('completed checklist items');
             }
-            
+
             // If any required information is missing, comment on the PR
             if (missingItems.length > 0) {
               const missingItemsList = missingItems.join(', ');
