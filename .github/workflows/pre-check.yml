@@ -1,0 +1,53 @@
+name: PR Checklist Validator
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for required information
+        id: check_info
+        run: |
+          # Extract the PR body
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
+          # Check for issue references in the body
+          if ! echo "$PR_BODY" | grep -qE '#[0-9]+'; then
+            echo "missing_issue=true" >> $GITHUB_ENV
+          fi
+
+          # Check if placeholders are answered
+          if ! echo "$PR_BODY" | grep -q "What kind of change does this PR introduce?"; then
+            echo "missing_change_type=true" >> $GITHUB_ENV
+          fi
+
+          if ! echo "$PR_BODY" | grep -q "Does this PR introduce a breaking change?"; then
+            echo "missing_breaking_change=true" >> $GITHUB_ENV
+          fi
+
+      - name: Post comment if information is missing
+        if: env.missing_issue == 'true' || env.missing_change_type == 'true' || env.missing_breaking_change == 'true'
+        run: |
+          COMMENT="Hi @${{ github.actor }}. Thanks a lot for your contribution!\n\n"
+          COMMENT+="Can you please make sure you link the related issues to the PR? The PR has some placeholders for that. Thanks a lot!!\n\n"
+
+          # Add details about missing information
+          if [ "${{ env.missing_issue }}" == "true" ]; then
+            COMMENT+="- Missing issue reference.\n"
+          fi
+          if [ "${{ env.missing_change_type }}" == "true" ]; then
+            COMMENT+="- Missing answer to 'What kind of change does this PR introduce?'\n"
+          fi
+          if [ "${{ env.missing_breaking_change }}" == "true" ]; then
+            COMMENT+="- Missing answer to 'Does this PR introduce a breaking change?'\n"
+          fi
+
+          # Post the comment on the PR
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+            -d "{\"body\": \"$COMMENT\"}"

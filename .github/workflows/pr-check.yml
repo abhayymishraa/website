@@ -1,0 +1,52 @@
+name: PR Check
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+jobs:
+  pr-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Analyze PR body
+        id: analyze
+        run: |
+          PR_BODY=$(jq -r '.pull_request.body' "$GITHUB_EVENT_PATH")
+
+          # Initialize missing items
+          MISSING_DETAILS=""
+
+          # Check for issue references
+          if [[ ! "$PR_BODY" =~ (Closes #[0-9]+|Related to #[0-9]+) ]]; then
+            MISSING_DETAILS+="\n- A linked issue (e.g., 'Closes #123')."
+          fi
+
+          # Check for placeholders not answered
+          if echo "$PR_BODY" | grep -q "<!--"; then
+            MISSING_DETAILS+="\n- Answers to all placeholder questions."
+          fi
+
+          # Check if checklist is ticked
+          if ! echo "$PR_BODY" | grep -q "\[x\]"; then
+            MISSING_DETAILS+="\n- The checklist is not completed."
+          fi
+
+          echo "::set-output name=missing::${MISSING_DETAILS}"
+
+      - name: Comment on PR if missing details
+        if: steps.analyze.outputs.missing != ""
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const missingDetails = `{{ steps.analyze.outputs.missing }}`;
+            const prAuthor = context.payload.pull_request.user.login;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `Hi @${prAuthor}. Thanks a lot for your contribution!\n\nCan you please make sure you provide the following details in your PR?\n${missingDetails}\n\nThanks a lot!`
+            });

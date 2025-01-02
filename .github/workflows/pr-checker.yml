@@ -1,0 +1,73 @@
+name: PR Content Checker
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  check-pr-content:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Check PR Content
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          missing_items=()
+          
+          # Check for required sections
+          if ! echo "$PR_BODY" | grep -q "**What kind of change does this PR introduce?**" || 
+             ! echo "$PR_BODY" | grep -q "**What kind of change does this PR introduce?**" -A1 | tail -n1 | grep -qv "^\s*$"; then
+            missing_items+=("What kind of change")
+          fi
+          
+          if ! echo "$PR_BODY" | grep -q "**Issue Number:**" || 
+             ! echo "$PR_BODY" | grep -qE "(Closes|Related to) #[0-9]+"; then
+            missing_items+=("Issue reference")
+          fi
+          
+          if ! echo "$PR_BODY" | grep -q "**Summary**" || 
+             ! echo "$PR_BODY" | grep -q "**Summary**" -A1 | tail -n1 | grep -qv "^\s*$"; then
+            missing_items+=("Summary")
+          fi
+          
+          if ! echo "$PR_BODY" | grep -q "**Does this PR introduce a breaking change?**" || 
+             ! echo "$PR_BODY" | grep -q "**Does this PR introduce a breaking change?**" -A1 | tail -n1 | grep -qv "^\s*$"; then
+            missing_items+=("Breaking Changes")
+          fi
+          
+          # Check for placeholder content
+          if echo "$PR_BODY" | grep -q "#___"; then
+            missing_items+=("Issue number (still contains placeholder)")
+          fi
+          
+          # Check checklist
+          if ! echo "$PR_BODY" | grep -q "\[x\] Read, understood, and followed the \[contributing guidelines\]"; then
+            missing_items+=("Unchecked contributing guidelines checkbox")
+          fi
+          
+          # If there are missing items, create a comment
+          if [ ${#missing_items[@]} -ne 0 ]; then
+            comment="Hi @$PR_AUTHOR! Thanks a lot for your contribution!
+
+          I noticed that some required information is missing from your PR. Could you please provide the following details:
+
+          $(printf "- %s\n" "${missing_items[@]}")
+
+          Please update the PR description with this information. This helps reviewers better understand your changes.
+
+          Note: Make sure to:
+          1. Link related issues to the PR
+          2. Fill in all placeholder questions
+          3. Check the contributing guidelines checkbox if you've read them
+
+          Thanks a lot!!"
+            
+            gh pr comment ${{ github.event.pull_request.number }} --body "$comment"
+            exit 1
+          fi
+        shell: bash
+
