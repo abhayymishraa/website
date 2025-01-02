@@ -50,11 +50,12 @@ jobs:
           
           # If there are missing items, create a comment
           if [ ${#missing_items[@]} -ne 0 ]; then
+            missing_items_formatted=$(printf -- "- %s\n" "${missing_items[@]}")
             comment="Hi @$PR_AUTHOR. Thanks a lot for your contribution!
 
           I noticed that some required information is missing from your PR. Could you please provide the following details:
 
-          $(printf "- %s\n" "${missing_items[@]}")
+          $missing_items_formatted
 
           The PR has placeholders for these items. Please make sure to link the related issues to the PR and fill in all the required information. This helps reviewers better understand your changes.
 
@@ -68,5 +69,4 @@ jobs:
             gh pr comment ${{ github.event.pull_request.number }} --body "$comment"
             exit 1
           fi
-        shell: bash
 
